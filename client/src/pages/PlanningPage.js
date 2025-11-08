@@ -11,6 +11,7 @@ const PlanningPage = ({ user }) => {
   const [loading, setLoading] = useState(true);
   const [roomExists, setRoomExists] = useState(false);
   const [error, setError] = useState('');
+  const [isMaster, setIsMaster] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -22,7 +23,7 @@ const PlanningPage = ({ user }) => {
       // Verify room exists and planning has started
       const { data: room, error: roomError } = await supabase
         .from('rooms')
-        .select('planning_started')
+        .select('planning_started, master_id')
         .eq('room_code', roomCode)
         .single();
 
@@ -37,6 +38,10 @@ const PlanningPage = ({ user }) => {
         navigate(`/room/${roomCode}`);
         return;
       }
+
+      // Check if user is master
+      const userIsMaster = room.master_id === user.id;
+      setIsMaster(userIsMaster);
 
       // Verify user is a participant
       const { data: participant } = await supabase
@@ -53,7 +58,7 @@ const PlanningPage = ({ user }) => {
           .insert({
             room_code: roomCode,
             user_id: user.id,
-            is_master: false,
+            is_master: userIsMaster,
           });
       }
 
@@ -95,7 +100,7 @@ const PlanningPage = ({ user }) => {
         <h1>Planning Room: {roomCode}</h1>
       </div>
       <div className="planning-content">
-        <GlobeComponent />
+        <GlobeComponent roomCode={roomCode} isMaster={isMaster} user={user} />
       </div>
     </div>
   );

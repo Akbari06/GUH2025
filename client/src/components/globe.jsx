@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Globe from "globe.gl";
 import * as THREE from "three";
+import { supabase } from "../lib/supabaseClient";
 import countriesUrl from "./countries.geojson"; // This will be a URL string
 
 // Function to get major cities for a country (3-4 cities per country)
@@ -345,19 +346,159 @@ const majorCountries = [
     "Tunisia", "Turkmenistan", "Uganda", "Uruguay", "Zambia"
 ];
 
-const GlobeComponent = () => {
+// Helper function to get country center coordinates from GeoJSON
+const getCountryCenter = (countryName, countriesData) => {
+  if (!countriesData || !countryName) return null;
+  
+  const countryFeature = countriesData.features.find(
+    f => f.properties?.name === countryName
+  );
+  
+  if (!countryFeature || !countryFeature.geometry) return null;
+  
+  // Calculate centroid for polygon
+  if (countryFeature.geometry.type === 'Polygon') {
+    const coordinates = countryFeature.geometry.coordinates[0];
+    let sumLat = 0, sumLng = 0;
+    coordinates.forEach(coord => {
+      sumLng += coord[0];
+      sumLat += coord[1];
+    });
+    return {
+      lat: sumLat / coordinates.length,
+      lng: sumLng / coordinates.length
+    };
+  } else if (countryFeature.geometry.type === 'MultiPolygon') {
+    // For MultiPolygon, use the largest polygon
+    let maxArea = 0;
+    let largestPolygon = null;
+    countryFeature.geometry.coordinates.forEach(polygon => {
+      const coords = polygon[0];
+      const area = coords.length;
+      if (area > maxArea) {
+        maxArea = area;
+        largestPolygon = coords;
+      }
+    });
+    if (largestPolygon) {
+      let sumLat = 0, sumLng = 0;
+      largestPolygon.forEach(coord => {
+        sumLng += coord[0];
+        sumLat += coord[1];
+      });
+      return {
+        lat: sumLat / largestPolygon.length,
+        lng: sumLng / largestPolygon.length
+      };
+    }
+  }
+  
+  return null;
+};
+
+// Helper function to get camera position to focus on a lat/lng point
+// The camera should be positioned opposite the point on the globe
+const getCameraPositionForPoint = (lat, lng, radius) => {
+  // Convert lat/lng to radians
+  const latRad = lat * (Math.PI / 180);
+  const lngRad = lng * (Math.PI / 180);
+  
+  // Calculate the point on the globe surface (normalized)
+  // Standard spherical to Cartesian conversion
+  const pointX = Math.cos(latRad) * Math.cos(lngRad);
+  const pointY = Math.sin(latRad);
+  const pointZ = Math.cos(latRad) * Math.sin(lngRad);
+  
+  // Position camera opposite the point (so it looks at the point through the center)
+  // Multiply by -radius to position camera on the opposite side
+  return new THREE.Vector3(
+    -pointX * radius,
+    -pointY * radius,
+    -pointZ * radius
+  );
+};
+
+const GlobeComponent = ({ roomCode, isMaster, user }) => {
   const globeRef = useRef();
   const globeInstanceRef = useRef(null);
   const selectedCountryRef = useRef(null);
+  const isMasterRef = useRef(isMaster);
+  const roomCodeRef = useRef(roomCode);
   const [selectedCountry, setSelectedCountry] = useState(null);
   const [hoveredCountry, setHoveredCountry] = useState(null);
   const [countriesData, setCountriesData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  //keep ref in sync with state
+  //keep refs in sync with props/state
   useEffect(() => {
     selectedCountryRef.current = selectedCountry;
   }, [selectedCountry]);
+
+  useEffect(() => {
+    isMasterRef.current = isMaster;
+  }, [isMaster]);
+
+  useEffect(() => {
+    roomCodeRef.current = roomCode;
+  }, [roomCode]);
+
+  // Load initial selected country from database
+  useEffect(() => {
+    if (!roomCode) return;
+
+    const loadInitialSelection = async () => {
+      const { data: room } = await supabase
+        .from('rooms')
+        .select('selected_country')
+        .eq('room_code', roomCode)
+        .single();
+
+      if (room?.selected_country) {
+        setSelectedCountry(room.selected_country);
+      }
+    };
+
+    loadInitialSelection();
+  }, [roomCode]);
+
+  // Real-time subscription for selected country changes
+  useEffect(() => {
+    if (!roomCode) return;
+
+    console.log('Setting up real-time subscription for room:', roomCode);
+
+    const channel = supabase
+      .channel(`room-globe-${roomCode}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'rooms',
+          filter: `room_code=eq.${roomCode}`,
+        },
+        (payload) => {
+          console.log('Real-time update received:', payload);
+          const newSelectedCountry = payload.new?.selected_country || null;
+          const currentSelected = selectedCountryRef.current;
+          
+          console.log('New selection:', newSelectedCountry, 'Current:', currentSelected);
+          
+          if (newSelectedCountry !== currentSelected) {
+            console.log('Updating selected country to:', newSelectedCountry);
+            setSelectedCountry(newSelectedCountry);
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('Subscription status:', status);
+      });
+
+    return () => {
+      console.log('Cleaning up real-time subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [roomCode]);
 
   //GeoJSON data to show all countrise
   useEffect(() => {
@@ -400,9 +541,9 @@ const GlobeComponent = () => {
     }
 
     const globe = Globe()(globeRef.current)
-      .globeImageUrl("//cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg")
-      .bumpImageUrl("//cdn.jsdelivr.net/npm/three-globe/example/img/earth-topology.png")
-      .backgroundImageUrl("//cdn.jsdelivr.net/npm/three-globe/example/img/night-sky.png")
+      .globeImageUrl("https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg")
+      .bumpImageUrl("https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-topology.png")
+      .backgroundImageUrl("https://cdn.jsdelivr.net/npm/three-globe/example/img/night-sky.png")
       .showAtmosphere(true)
       .atmosphereColor(0xffffff) // White atmosphere (no alpha in THREE.Color)
       .atmosphereAltitude(0.1)
@@ -418,20 +559,57 @@ const GlobeComponent = () => {
       .pointLabel(d => d.name) // Show city name on hover
       .labelsData([]) // Initialize with empty labels - using hover labels instead
       .onPolygonClick(d => {
-        // Only allow clicking on major countries
-        if (!d || !majorCountries.includes(d.properties.name)) {
+        const currentIsMaster = isMasterRef.current;
+        const currentRoomCode = roomCodeRef.current;
+        
+        console.log("Polygon clicked! isMaster:", currentIsMaster, "roomCode:", currentRoomCode, "country:", d?.properties?.name);
+        
+        // Only master can interact with the globe
+        if (!currentIsMaster) {
+          console.log("Not master, ignoring click");
           return;
         }
+        
+        // Only allow clicking on major countries
+        if (!d || !majorCountries.includes(d.properties.name)) {
+          console.log("Country not in major countries list or invalid:", d?.properties?.name);
+          return;
+        }
+        
         console.log("Country clicked:", d.properties.name);
         // Toggle selection - click again to deselect
         const currentSelected = selectedCountryRef.current;
-        if (currentSelected === d.properties.name) {
-          setSelectedCountry(null);
+        const newSelection = currentSelected === d.properties.name ? null : d.properties.name;
+        
+        // Update local state immediately for instant feedback (master only)
+        setSelectedCountry(newSelection);
+        
+        // Update in database for real-time sync to all users
+        if (currentRoomCode) {
+          console.log("Updating database with selection:", newSelection, "for room:", currentRoomCode);
+          supabase
+            .from('rooms')
+            .update({ selected_country: newSelection })
+            .eq('room_code', currentRoomCode)
+            .then(({ error }) => {
+              if (error) {
+                console.error('Error updating selected country:', error);
+                // Revert local state on error
+                setSelectedCountry(currentSelected);
+              } else {
+                console.log('Successfully updated selected country in database:', newSelection);
+              }
+            });
         } else {
-          setSelectedCountry(d.properties.name);
+          console.log("No roomCode, skipping database update");
         }
       })
       .onPolygonHover(d => {
+        // Only master can see hover effects
+        if (!isMasterRef.current) {
+          setHoveredCountry(null);
+          return;
+        }
         // Only allow hovering on major countries
         if (!d || !majorCountries.includes(d.properties.name)) {
           setHoveredCountry(null);
@@ -444,7 +622,7 @@ const GlobeComponent = () => {
     const globeMaterial = globe.globeMaterial();
     globeMaterial.bumpScale = 10;
 
-    new THREE.TextureLoader().load('//cdn.jsdelivr.net/npm/three-globe/example/img/earth-water.png', texture => {
+    new THREE.TextureLoader().load('https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-water.png', texture => {
       globeMaterial.specularMap = texture;
       globeMaterial.specular = new THREE.Color('grey');
       globeMaterial.shininess = 15;
@@ -483,8 +661,9 @@ const GlobeComponent = () => {
     controls.enablePan = false;
     controls.enableDamping = true;
     controls.dampingFactor = 0.1;
-    controls.enableZoom = true;
-    controls.enableRotate = true;
+    // Only master can zoom and rotate
+    controls.enableZoom = isMaster;
+    controls.enableRotate = isMaster;
 
     console.log("Globe initialized successfully");
     globeInstanceRef.current = globe;
@@ -496,17 +675,104 @@ const GlobeComponent = () => {
         globeInstanceRef.current = null;
       }
     };
-  }, [countriesData, loading]); // Run when data is loaded
+  }, [countriesData, loading, isMaster]); // Run when data is loaded or master status changes
 
+  // Update controls when isMaster changes
   useEffect(() => {
     if (!globeInstanceRef.current) return;
     
     const controls = globeInstanceRef.current.controls();
-    if (selectedCountry) {
-      controls.autoRotate = false; //stop rotating when selected
-    } else {
-      controls.autoRotate = true; //carrt on rotation when deselected
+    controls.enableZoom = isMaster;
+    controls.enableRotate = isMaster;
+  }, [isMaster]);
+
+  // Handle selected country changes: stop rotation, pan to country, update styling
+  useEffect(() => {
+    console.log('Selected country changed:', selectedCountry, 'globeInstance:', !!globeInstanceRef.current, 'countriesData:', !!countriesData);
+    
+    if (!globeInstanceRef.current) {
+      console.log('No globe instance, skipping pan');
+      return;
     }
+    
+    if (!selectedCountry) {
+      console.log('No selected country, resetting auto-rotate');
+      const controls = globeInstanceRef.current.controls();
+      controls.autoRotate = true;
+      return;
+    }
+    
+    const globe = globeInstanceRef.current;
+    const controls = globe.controls();
+    controls.autoRotate = false; //stop rotating when selected
+    
+    // Pan camera to focus on the selected country
+    const center = getCountryCenter(selectedCountry, countriesData);
+    console.log('Country center calculated:', center, 'for country:', selectedCountry);
+    
+    if (center) {
+      console.log('Panning to country:', selectedCountry, 'at', center);
+      
+      // Try using globe.gl's pointOfView method first (if available)
+      if (typeof globeInstanceRef.current.pointOfView === 'function') {
+        try {
+          globeInstanceRef.current.pointOfView(
+            { lat: center.lat, lng: center.lng, altitude: 2.5 },
+            1500
+          );
+          console.log('Used pointOfView method');
+          return;
+        } catch (error) {
+          console.log('pointOfView failed, using manual calculation:', error);
+        }
+      }
+      
+      // Manual calculation: get camera position to focus on the point
+      const camera = globe.camera();
+      const currentPos = camera.position.clone();
+      const radius = currentPos.length(); // Maintain current distance from globe
+      
+      // Calculate target camera position (opposite the point on globe)
+      const targetPos = getCameraPositionForPoint(center.lat, center.lng, radius);
+      
+      // Animate smoothly to target position
+      const startPos = currentPos.clone();
+      let startTime = Date.now();
+      const duration = 1500; // 1.5 second smooth animation
+      
+      const animate = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Smooth easing function (ease-in-out cubic)
+        const eased = progress < 0.5
+          ? 4 * progress * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+        
+        // Interpolate camera position
+        camera.position.lerpVectors(startPos, targetPos, eased);
+        
+        // Always look at the center of the globe
+        camera.lookAt(0, 0, 0);
+        controls.update();
+        
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          console.log('Finished panning to', selectedCountry);
+        }
+      };
+      
+      animate();
+    }
+  }, [selectedCountry, countriesData]);
+  
+  // Reset auto-rotate when country is deselected
+  useEffect(() => {
+    if (!globeInstanceRef.current || selectedCountry) return;
+    
+    const controls = globeInstanceRef.current.controls();
+    controls.autoRotate = true; //continue rotation when deselected
   }, [selectedCountry]);
 
   //updatye for cities 
