@@ -15,6 +15,7 @@ else:
 api_key = os.getenv("GEMINI_API_KEY")
 
 if not api_key:
+    
     print("ERROR: GEMINI_API_KEY not set. Create a .env file with GEMINI_API_KEY=your_key", file=sys.stderr)
     # Keep existing behavior of exiting so the router can catch SystemExit
     sys.exit(1)
