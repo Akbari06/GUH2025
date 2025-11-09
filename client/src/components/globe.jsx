@@ -464,6 +464,7 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
   const [hoveredArc, setHoveredArc] = useState(null);
   const [routeAnimated, setRouteAnimated] = useState(false);
   const hotelRecommendationCalledRef = useRef(false);
+  const previousOpportunityRef = useRef(null);
 
   //keep refs in sync with props/state
   useEffect(() => {
@@ -1206,6 +1207,15 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
       Math.abs(opportunityMarkerState.lat - shinjukuLat) < 0.0001 &&
       Math.abs(opportunityMarkerState.lng - shinjukuLng) < 0.0001;
 
+    // Check if this is a new opportunity selection (different from previous)
+    const currentOppKey = opportunityMarkerState ? 
+      `${opportunityMarkerState.lat},${opportunityMarkerState.lng}` : null;
+    const prevOppKey = previousOpportunityRef.current;
+    const isNewSelection = currentOppKey !== prevOppKey;
+    
+    // Update previous opportunity ref
+    previousOpportunityRef.current = currentOppKey;
+
     if (isShinjukuSelected) {
       // Show the route with solid line and animate once
       const flightRoute = [{
@@ -1218,6 +1228,11 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
       }];
 
       globe.arcsData(flightRoute);
+      
+      // Reset animation state when a new selection is made
+      if (isNewSelection) {
+        setRouteAnimated(false);
+      }
       
       // Animate once, then make it solid
       if (!routeAnimated) {
@@ -1245,56 +1260,78 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
           .arcDashAnimateTime(() => 0);
       }
 
-      // Trigger hotel recommendation call (only once)
+      // Trigger hotel recommendation call (only once per room, check if already in chat)
       if (!hotelRecommendationCalledRef.current && roomCode) {
-        hotelRecommendationCalledRef.current = true;
-        // Call hotel recommendation endpoint
-        const apiBase = process.env.REACT_APP_API_URL ?? '';
-        const endpoint = `${apiBase}/api/gemini/hotel-recommendations`;
-        
-        fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            room_code: roomCode,
-            location: 'Shinjuku, Tokyo, Japan',
-            lat: shinjukuLat,
-            lng: shinjukuLng
-          }),
-        })
-        .then(response => {
-          if (!response.ok) {
-            console.error('Failed to get hotel recommendations:', response.status);
-            return null;
-          }
-          return response.json();
-        })
-        .then(data => {
-          if (data && data.recommendation) {
-            // Insert hotel recommendation into chat
-            const recommendationMessage = `🏨 Hotel Recommendations for Shinjuku:\n\n${data.recommendation}`;
+        // Check if hotel recommendation already exists in chat to avoid duplicates
+        supabase
+          .from('messages')
+          .select('id')
+          .eq('room_code', roomCode)
+          .ilike('message', '%Hotel Recommendations for Shinjuku%')
+          .limit(1)
+          .then(({ data, error }) => {
+            if (error) {
+              console.error('Error checking for existing hotel recommendation:', error);
+            }
             
-            supabase
-              .from('messages')
-              .insert({
-                room_code: roomCode,
-                user_id: user?.id || null,
-                message: recommendationMessage,
+            // Only call if no existing recommendation found
+            if (!data || data.length === 0) {
+              hotelRecommendationCalledRef.current = true;
+              // Call hotel recommendation endpoint
+              const apiBase = process.env.REACT_APP_API_URL ?? '';
+              const endpoint = `${apiBase}/api/gemini/hotel-recommendations`;
+              
+              fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  room_code: roomCode,
+                  location: 'Shinjuku, Tokyo, Japan',
+                  lat: shinjukuLat,
+                  lng: shinjukuLng
+                }),
               })
-              .then(({ error }) => {
-                if (error) {
-                  console.error('Error inserting hotel recommendation:', error);
-                } else {
-                  console.log('Hotel recommendation inserted into chat');
+              .then(response => {
+                if (!response.ok) {
+                  console.error('Failed to get hotel recommendations:', response.status);
+                  hotelRecommendationCalledRef.current = false; // Reset on error
+                  return null;
                 }
+                return response.json();
+              })
+              .then(data => {
+                if (data && data.recommendation) {
+                  // Insert hotel recommendation into chat
+                  const recommendationMessage = `🏨 Hotel Recommendations for Shinjuku:\n\n${data.recommendation}`;
+                  
+                  supabase
+                    .from('messages')
+                    .insert({
+                      room_code: roomCode,
+                      user_id: user?.id || null,
+                      message: recommendationMessage,
+                    })
+                    .then(({ error }) => {
+                      if (error) {
+                        console.error('Error inserting hotel recommendation:', error);
+                        hotelRecommendationCalledRef.current = false; // Reset on error
+                      } else {
+                        console.log('Hotel recommendation inserted into chat');
+                      }
+                    });
+                }
+              })
+              .catch(error => {
+                console.error('Error calling hotel recommendation endpoint:', error);
+                hotelRecommendationCalledRef.current = false; // Reset on error
               });
-          }
-        })
-        .catch(error => {
-          console.error('Error calling hotel recommendation endpoint:', error);
-        });
+            } else {
+              // Hotel recommendation already exists, mark as called
+              hotelRecommendationCalledRef.current = true;
+            }
+          });
       }
     } else {
       // Hide the route
@@ -1303,8 +1340,8 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
       if (routeAnimated) {
         setRouteAnimated(false);
       }
-      // Reset hotel recommendation flag when route is hidden
-      if (hotelRecommendationCalledRef.current) {
+      // Reset hotel recommendation flag when route is hidden (but keep it if switching between opportunities)
+      if (!isShinjukuSelected && hotelRecommendationCalledRef.current) {
         hotelRecommendationCalledRef.current = false;
       }
     }
