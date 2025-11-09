@@ -3,17 +3,11 @@
 Parse a Gemini 'latlon' response string into a Python list of dicts:
   [ {"latlon": [lat, lon], "country": "country"}, ... ]
 
-Usage:
-  >>> from gemini.parse_gemini_latlon_list import parse_gemini_latlon_list
-  >>> raw = '...the Gemini response string...'
-  >>> entries = parse_gemini_latlon_list(raw)
-  >>> print(entries)   # list of dicts
-
-Notes:
-- The parser is tolerant of small JSON problems (like missing '[' before the pair).
-- It will attempt to extract both lat/lon and an accompanying country string (lowercased).
-- If "country" is missing for an entry, that entry will include "country": None.
+This parser is tolerant of small JSON problems (like missing '[' before the pair).
+It will extract lat/lon and an optional country string (lowercased). It does NOT
+look for or return any 'city' field.
 """
+
 import json
 import re
 from typing import List, Dict, Any, Optional
@@ -46,16 +40,13 @@ def _try_json_load(raw: str) -> Optional[List[Dict[str, Any]]]:
                 if not isinstance(item, dict):
                     continue
                 if "latlon" not in item:
-                    # tolerate older style where latlon may be named differently? skip otherwise
                     continue
                 val = item["latlon"]
-                # accept lists/tuples of two numbers
                 if isinstance(val, (list, tuple)) and len(val) == 2:
                     try:
                         lat = float(val[0])
                         lon = float(val[1])
                     except Exception:
-                        # skip malformed numeric entries
                         continue
                     country = _normalize_country(item.get("country"))
                     out.append({"latlon": [lat, lon], "country": country})
@@ -94,7 +85,6 @@ def parse_gemini_latlon_list(raw: str) -> List[Dict[str, Any]]:
             if isinstance(unquoted, str):
                 text = unquoted
         except Exception:
-            # leave text as-is if json.loads fails
             pass
 
     # 1) Try to parse as valid JSON and extract clean latlon pairs with country
@@ -103,7 +93,6 @@ def parse_gemini_latlon_list(raw: str) -> List[Dict[str, Any]]:
         return parsed
 
     # 2) Tolerant regex extraction:
-    # Match "latlon": [<num>, <num>] optionally followed somewhere by "country": "country"
     number = r"[+-]?\d+(?:\.\d+)?"
     # Allow optional opening '[' and optional closing ']' for malformed cases
     pattern = re.compile(
@@ -111,7 +100,6 @@ def parse_gemini_latlon_list(raw: str) -> List[Dict[str, Any]]:
         flags=re.IGNORECASE
     )
 
-    # A permissive country matcher that finds a nearby "country": value (quoted or unquoted token)
     country_pattern = re.compile(
         r'"country"\s*:\s*(?P<q>["\']?)(?P<country>[^"\'},\]]+)(?P=q)',
         flags=re.IGNORECASE
@@ -124,27 +112,29 @@ def parse_gemini_latlon_list(raw: str) -> List[Dict[str, Any]]:
             lat = float(lat_s)
             lon = float(lon_s)
 
-            # Search for a "country" token near the match. We'll first look forward a short distance,
-            # then backwards a short distance, then globally as fallback.
             country = None
+
+            # Search in a larger window around the match (500 chars forward and backward)
             search_span_start = max(0, m.end())
-            search_span_end = min(len(text), m.end() + 200)  # 200 chars forward
+            search_span_end = min(len(text), m.end() + 500)
             forward_chunk = text[search_span_start:search_span_end]
-            fm = country_pattern.search(forward_chunk)
-            if fm:
-                country = _normalize_country(fm.group("country"))
-            else:
-                # try a backward search (200 chars)
-                back_start = max(0, m.start() - 200)
-                back_chunk = text[back_start:m.start()]
-                bm = country_pattern.search(back_chunk)
-                if bm:
-                    country = _normalize_country(bm.group("country"))
-                else:
-                    # global fallback: first "country" anywhere in the document (less reliable)
-                    gm = country_pattern.search(text)
-                    if gm:
-                        country = _normalize_country(gm.group("country"))
+
+            back_start = max(0, m.start() - 500)
+            back_chunk = text[back_start:m.start()]
+
+            fm_country = country_pattern.search(forward_chunk)
+            bm_country = country_pattern.search(back_chunk)
+
+            if fm_country:
+                country = _normalize_country(fm_country.group("country"))
+            elif bm_country:
+                country = _normalize_country(bm_country.group("country"))
+
+            # Global fallback if still not found (less reliable)
+            if country is None:
+                gm_country = country_pattern.search(text)
+                if gm_country:
+                    country = _normalize_country(gm_country.group("country"))
 
             results.append({"latlon": [lat, lon], "country": country})
         except Exception:
@@ -158,24 +148,29 @@ def parse_gemini_latlon_list(raw: str) -> List[Dict[str, Any]]:
             try:
                 lat = float(m.group(1))
                 lon = float(m.group(2))
-                # try to locate nearby country as above
+
                 country = None
+
                 search_span_start = max(0, m.end())
-                search_span_end = min(len(text), m.end() + 200)
+                search_span_end = min(len(text), m.end() + 500)
                 forward_chunk = text[search_span_start:search_span_end]
-                fm = country_pattern.search(forward_chunk)
-                if fm:
-                    country = _normalize_country(fm.group("country"))
-                else:
-                    back_start = max(0, m.start() - 200)
-                    back_chunk = text[back_start:m.start()]
-                    bm = country_pattern.search(back_chunk)
-                    if bm:
-                        country = _normalize_country(bm.group("country"))
-                    else:
-                        gm = country_pattern.search(text)
-                        if gm:
-                            country = _normalize_country(gm.group("country"))
+
+                back_start = max(0, m.start() - 500)
+                back_chunk = text[back_start:m.start()]
+
+                fm_country = country_pattern.search(forward_chunk)
+                bm_country = country_pattern.search(back_chunk)
+
+                if fm_country:
+                    country = _normalize_country(fm_country.group("country"))
+                elif bm_country:
+                    country = _normalize_country(bm_country.group("country"))
+
+                if country is None:
+                    gm_country = country_pattern.search(text)
+                    if gm_country:
+                        country = _normalize_country(gm_country.group("country"))
+
                 results.append({"latlon": [lat, lon], "country": country})
             except Exception:
                 continue
