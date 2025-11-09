@@ -79,9 +79,12 @@ WellWorld is an interactive platform that connects volunteers with global opport
    ```bash
    # backend/.env
    GEMINI_API_KEY=your_gemini_api_key_here
+   GMAPS_API_KEY=your_google_maps_api_key_here
    ```
    
-   You can get your Gemini API key from: https://makersuite.google.com/app/apikey
+   You can get your API keys from:
+   - Gemini API key: https://makersuite.google.com/app/apikey
+   - Google Maps API key: https://console.cloud.google.com/google/maps-apis/credentials
 
 6. **Run the backend server:**
    ```bash
@@ -102,6 +105,7 @@ WellWorld is an interactive platform that connects volunteers with global opport
 ### Environment Variables
 
 - `GEMINI_API_KEY` (required): Your Google Gemini API key
+- `GMAPS_API_KEY` (required): Your Google Maps API key (for flight routing features)
 - `GEMINI_FAST_MODEL` (optional): Override the default model (default: `gemini-2.5-flash`)
 - `FRONTEND_ORIGINS` (optional): Comma-separated list of allowed frontend origins (default: `http://localhost:3000`)
 

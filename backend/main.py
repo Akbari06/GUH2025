@@ -1,5 +1,13 @@
 # main.py
 import os
+import sys
+from pathlib import Path
+
+# Add the backend directory to Python path so imports work when running from root
+backend_dir = Path(__file__).parent
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,6 +48,10 @@ app.include_router(idealist_geo_router, prefix="/api/gemini", tags=["gemini"])
 from routers.gemini.recommend_opportunity import router as recommend_opportunity_router
 
 app.include_router(recommend_opportunity_router, prefix="/api/gemini", tags=["gemini"])
+
+# Mount the Google Maps router
+from routers.gmap.router import router as gmap_router
+app.include_router(gmap_router, prefix="/api/gmap", tags=["gmap"])
 
 
 @app.get("/", response_class=HTMLResponse)

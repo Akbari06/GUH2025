@@ -116,8 +116,18 @@ const JoinRoomPage = ({ user }) => {
   return (
     <div className="join-room-page">
       <div className="join-room-container">
-        <h1 className="page-title">Join Room</h1>
-        <p className="page-subtitle">Enter the 6-digit room code</p>
+        <div className="join-room-logo">
+          <span className="join-room-logo-mark">WW</span>
+          <div className="join-room-logo-text">
+            <h1 className="page-title">Join Room</h1>
+            <p className="join-room-tagline">Enter Room Code</p>
+          </div>
+        </div>
+        <p className="page-subtitle">
+          Enter the 6-digit room code to join
+        </p>
+
+        {error && <div className="error-message">{error}</div>}
 
         <form onSubmit={handleJoin} className="join-form">
           <input
@@ -129,29 +139,27 @@ const JoinRoomPage = ({ user }) => {
               setRoomCode(value);
               setError('');
             }}
-            placeholder="Enter room code"
+            placeholder="ROOM CODE"
             maxLength={6}
             autoFocus
           />
-
-          {error && <div className="error-message">{error}</div>}
 
           <button
             type="submit"
             className="btn btn-primary"
             disabled={loading || roomCode.length !== 6}
           >
-            {loading ? 'Joining...' : 'Join Private Room'}
-          </button>
-
-          <button
-            type="button"
-            className="btn btn-link"
-            onClick={() => navigate('/')}
-          >
-            Back to Home
+            {loading ? 'Joining...' : 'Join Room'}
           </button>
         </form>
+
+        <button
+          type="button"
+          className="btn-link"
+          onClick={() => navigate('/')}
+        >
+          Back to Home
+        </button>
       </div>
     </div>
   );
