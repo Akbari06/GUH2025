@@ -10,88 +10,12 @@ const OpportunitiesPanel = ({ roomCode, onOpportunitySelect, selectedCountry, on
   const [showAllOpportunities, setShowAllOpportunities] = useState(true);
   const debounceTimerRef = useRef(null);
 
-  // Load opportunities from backend JSON (with sample data fallback)
+  // Load opportunities from JSON file
   useEffect(() => {
     const loadOpportunities = async () => {
-      // Sample data for testing
-      const sampleData = [
-        {
-          latlon: [40.7128, -74.0060],
-          name: "Community Garden Project",
-          Link: "https://example.com/garden",
-          Country: "United States"
-        },
-        {
-          latlon: [51.5074, -0.1278],
-          name: "London Food Bank",
-          Link: "https://example.com/foodbank",
-          Country: "United Kingdom"
-        },
-        {
-          latlon: [35.6762, 139.6503],
-          name: "Tokyo Elderly Care",
-          Link: "https://example.com/elderly",
-          Country: "Japan"
-        },
-        {
-          latlon: [-23.5505, -46.6333],
-          name: "São Paulo Education Initiative",
-          Link: "https://example.com/education",
-          Country: "Brazil"
-        },
-        {
-          latlon: [28.6139, 77.2090],
-          name: "Delhi Clean Water Project",
-          Link: "https://example.com/water",
-          Country: "India"
-        },
-        {
-          latlon: [52.5200, 13.4050],
-          name: "Berlin Refugee Support",
-          Link: "https://example.com/refugee",
-          Country: "Germany"
-        },
-        {
-          latlon: [-33.8688, 151.2093],
-          name: "Sydney Environmental Cleanup",
-          Link: "https://example.com/environment",
-          Country: "Australia"
-        },
-        {
-          latlon: [19.4326, -99.1332],
-          name: "Mexico City Youth Program",
-          Link: "https://example.com/youth",
-          Country: "Mexico"
-        },
-        {
-          latlon: [55.7558, 37.6173],
-          name: "Moscow Homeless Shelter",
-          Link: "https://example.com/shelter",
-          Country: "Russia"
-        },
-        {
-          latlon: [39.9042, 116.4074],
-          name: "Beijing Education Fund",
-          Link: "https://example.com/education-fund",
-          Country: "China"
-        },
-        {
-          latlon: [-34.6037, -58.3816],
-          name: "Buenos Aires Community Center",
-          Link: "https://example.com/community",
-          Country: "Argentina"
-        },
-        {
-          latlon: [30.0444, 31.2357],
-          name: "Cairo Medical Mission",
-          Link: "https://example.com/medical",
-          Country: "Egypt"
-        }
-      ];
-
       try {
-        // Try to fetch from backend (optional - will use sample data if fails)
-        const response = await fetch('/api/opportunities.json');
+        // Fetch from JSON file in public folder
+        const response = await fetch('/opportunities.json');
         
         if (response.ok) {
           const data = await response.json();
@@ -145,23 +69,13 @@ const OpportunitiesPanel = ({ roomCode, onOpportunitySelect, selectedCountry, on
             return;
           }
         }
+        
+        throw new Error('Failed to load opportunities.json');
       } catch (err) {
-        console.log('Backend JSON not available, using sample data:', err.message);
+        console.error('Error loading opportunities:', err.message);
+        setError('Failed to load opportunities. Please check that opportunities.json exists.');
+        setLoading(false);
       }
-
-      // Use sample data (either as fallback or primary)
-      const validatedSampleData = sampleData.map((opp, index) => ({
-        id: `sample-${index}`,
-        lat: opp.latlon[0],
-        lng: opp.latlon[1],
-        name: opp.name,
-        link: opp.Link,
-        country: opp.Country
-      }));
-
-      setOpportunities(validatedSampleData);
-      setError(null);
-      setLoading(false);
     };
 
     loadOpportunities();
