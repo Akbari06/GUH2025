@@ -299,6 +299,10 @@ const Chat = ({ roomCode, userId, masterId, paginatedOpportunities = [], opportu
     setAskWorldAILoading(true);
 
     try {
+      // Ensure any pending messages are committed before querying
+      // Wait a brief moment to ensure the latest message is in the database
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       // Send only the currently displayed (paginated) opportunities (up to 5) to the backend
       const displayedOpportunities = paginatedOpportunities.map(opp => ({
         id: opp.id || null,
@@ -313,6 +317,7 @@ const Chat = ({ roomCode, userId, masterId, paginatedOpportunities = [], opportu
       };
 
       console.log('Calling recommend-opportunity with paginated opportunities:', displayedOpportunities);
+      console.log('Room code:', roomCode, '- Backend will fetch latest message from database');
 
       // apiBase: allow same-origin by default. If your backend runs on a different origin, set REACT_APP_API_URL.
       const apiBase = process.env.REACT_APP_API_URL ?? '';

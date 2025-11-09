@@ -419,6 +419,35 @@ const getCameraPositionForPoint = (lat, lng, radius) => {
   return new THREE.Vector3(-x, -y, -z);
 };
 
+// Helper function to calculate distance between two points using Haversine formula
+const calculateDistance = (lat1, lng1, lat2, lng2) => {
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // Distance in kilometers
+};
+
+// Helper function to calculate estimated flight time in hours
+const calculateFlightTime = (lat1, lng1, lat2, lng2) => {
+  const distance = calculateDistance(lat1, lng1, lat2, lng2);
+  const averageSpeed = 800; // Average commercial flight speed in km/h
+  return distance / averageSpeed;
+};
+
+// Helper function to create Google Flights URL
+const createGoogleFlightsUrl = (startLat, startLng, endLat, endLng) => {
+  // For Google Flights, we need airport codes or city names
+  // Using coordinates, we'll construct a search URL
+  // Google Flights format: https://www.google.com/travel/flights?q=Flights%20from%20MAN%20to%20NRT
+  // For now, we'll use a generic search with coordinates
+  return `https://www.google.com/travel/flights?q=Flights%20from%20Manchester%20to%20Tokyo`;
+};
+
 const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportunities = [], onCountrySelect, customGlobeImage }) => {
   const globeRef = useRef();
   const globeInstanceRef = useRef(null);
@@ -432,6 +461,9 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
   const [opportunityMarkerState, setOpportunityMarkerState] = useState(null);
   const prevOpportunityMarkerRef = useRef(null);
   const prevSelectedCountryRef = useRef(null);
+  const [hoveredArc, setHoveredArc] = useState(null);
+  const [routeAnimated, setRouteAnimated] = useState(false);
+  const hotelRecommendationCalledRef = useRef(false);
 
   //keep refs in sync with props/state
   useEffect(() => {
@@ -656,6 +688,30 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
           return;
         }
         setHoveredCountry(d.properties.name);
+      });
+
+    // Flight route from Manchester to Shinjuku - only show when specific opportunity is selected
+    // Initialize with empty route - will be updated via useEffect
+    globe
+      .arcsData([])
+      .arcStartLat(d => d.startLat)
+      .arcStartLng(d => d.startLng)
+      .arcEndLat(d => d.endLat)
+      .arcEndLng(d => d.endLng)
+      .arcColor(() => '#7c3aed') // Purple color to match theme
+      .arcStroke(() => 2)
+      .arcLabel(() => '') // Label will be updated via useEffect
+      .onArcClick(d => {
+        if (d && d.flightsUrl) {
+          window.open(d.flightsUrl, '_blank');
+        }
+      })
+      .onArcHover(d => {
+        if (d) {
+          setHoveredArc(d);
+        } else {
+          setHoveredArc(null);
+        }
       });
 
     // Custom globe material
@@ -1119,6 +1175,141 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
       });
   }, [selectedCountry, hoveredCountry]);
 
+  // Update arc label when hoveredArc changes
+  useEffect(() => {
+    if (!globeInstanceRef.current) return;
+
+    const globe = globeInstanceRef.current;
+    
+    globe.arcLabel(d => {
+      if (hoveredArc === d && d.flightTime) {
+        return `${d.flightTime.toFixed(1)} hours`;
+      }
+      return '';
+    });
+  }, [hoveredArc]);
+
+  // Show flight route only when specific Shinjuku opportunity is selected
+  useEffect(() => {
+    if (!globeInstanceRef.current) return;
+
+    const globe = globeInstanceRef.current;
+    const manchesterLat = 53.4;
+    const manchesterLng = 2.3;
+    const shinjukuLat = 35.6897;
+    const shinjukuLng = 139.6997;
+    
+    // Check if the selected opportunity matches Shinjuku coordinates
+    const isShinjukuSelected = opportunityMarkerState && 
+      opportunityMarkerState.lat && 
+      opportunityMarkerState.lng &&
+      Math.abs(opportunityMarkerState.lat - shinjukuLat) < 0.0001 &&
+      Math.abs(opportunityMarkerState.lng - shinjukuLng) < 0.0001;
+
+    if (isShinjukuSelected) {
+      // Show the route with solid line and animate once
+      const flightRoute = [{
+        startLat: manchesterLat,
+        startLng: manchesterLng,
+        endLat: shinjukuLat,
+        endLng: shinjukuLng,
+        flightTime: calculateFlightTime(manchesterLat, manchesterLng, shinjukuLat, shinjukuLng),
+        flightsUrl: createGoogleFlightsUrl(manchesterLat, manchesterLng, shinjukuLat, shinjukuLng)
+      }];
+
+      globe.arcsData(flightRoute);
+      
+      // Animate once, then make it solid
+      if (!routeAnimated) {
+        // First time: animate the line being drawn
+        globe
+          .arcDashLength(() => 0.4)
+          .arcDashGap(() => 0.2)
+          .arcDashAnimateTime(() => 2000);
+        
+        // After animation completes, make it solid
+        setTimeout(() => {
+          if (globeInstanceRef.current) {
+            globeInstanceRef.current
+              .arcDashLength(() => 0) // Solid line (no dashes)
+              .arcDashGap(() => 0)
+              .arcDashAnimateTime(() => 0);
+            setRouteAnimated(true);
+          }
+        }, 2000);
+      } else {
+        // Already animated: keep it solid
+        globe
+          .arcDashLength(() => 0) // Solid line (no dashes)
+          .arcDashGap(() => 0)
+          .arcDashAnimateTime(() => 0);
+      }
+
+      // Trigger hotel recommendation call (only once)
+      if (!hotelRecommendationCalledRef.current && roomCode) {
+        hotelRecommendationCalledRef.current = true;
+        // Call hotel recommendation endpoint
+        const apiBase = process.env.REACT_APP_API_URL ?? '';
+        const endpoint = `${apiBase}/api/gemini/hotel-recommendations`;
+        
+        fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            room_code: roomCode,
+            location: 'Shinjuku, Tokyo, Japan',
+            lat: shinjukuLat,
+            lng: shinjukuLng
+          }),
+        })
+        .then(response => {
+          if (!response.ok) {
+            console.error('Failed to get hotel recommendations:', response.status);
+            return null;
+          }
+          return response.json();
+        })
+        .then(data => {
+          if (data && data.recommendation) {
+            // Insert hotel recommendation into chat
+            const recommendationMessage = `🏨 Hotel Recommendations for Shinjuku:\n\n${data.recommendation}`;
+            
+            supabase
+              .from('messages')
+              .insert({
+                room_code: roomCode,
+                user_id: user?.id || null,
+                message: recommendationMessage,
+              })
+              .then(({ error }) => {
+                if (error) {
+                  console.error('Error inserting hotel recommendation:', error);
+                } else {
+                  console.log('Hotel recommendation inserted into chat');
+                }
+              });
+          }
+        })
+        .catch(error => {
+          console.error('Error calling hotel recommendation endpoint:', error);
+        });
+      }
+    } else {
+      // Hide the route
+      globe.arcsData([]);
+      // Reset animation flag when route is hidden
+      if (routeAnimated) {
+        setRouteAnimated(false);
+      }
+      // Reset hotel recommendation flag when route is hidden
+      if (hotelRecommendationCalledRef.current) {
+        hotelRecommendationCalledRef.current = false;
+      }
+    }
+  }, [opportunityMarkerState, routeAnimated, roomCode, user]);
+
   return (
     <div style={{ width: "100%", height: "100%", position: "relative", minWidth: 0, minHeight: 0 }}>
       {loading && (
@@ -1155,6 +1346,30 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
           }}
         >
           {selectedCountry}
+        </div>
+      )}
+      
+      {/* Flight time tooltip on hover */}
+      {hoveredArc && hoveredArc.flightTime && (
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            backgroundColor: "rgba(10, 12, 25, 0.9)",
+            color: "#f8fafc",
+            padding: "12px 20px",
+            borderRadius: "8px",
+            fontSize: "16px",
+            fontWeight: "600",
+            zIndex: 2000,
+            pointerEvents: "none",
+            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.3)",
+            border: "1px solid rgba(124, 58, 237, 0.5)",
+          }}
+        >
+          Estimated Flight Time: {hoveredArc.flightTime.toFixed(1)} hours
         </div>
       )}
     </div>

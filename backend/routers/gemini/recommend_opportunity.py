@@ -150,6 +150,7 @@ def fetch_room_selected_country(room_code: str) -> Optional[str]:
 def fetch_latest_user_message(room_code: str) -> str:
     """
     Fetch the most recent user message (excluding bot recommendations) for the room_code from Supabase.
+    Queries the database fresh each time to ensure we get the absolute latest message.
     Returns the message text as a sanitized string, or empty string if no message found.
     """
     if not supabase:
@@ -157,12 +158,15 @@ def fetch_latest_user_message(room_code: str) -> str:
         return ""
 
     try:
+        # Query for the most recent messages, ordered by created_at descending (newest first)
+        # Use a larger limit to ensure we find a user message even if recent messages are bot messages
+        # This query is executed fresh each time to ensure we get the absolute latest message
         res = (
             supabase.table("messages")
             .select("message, created_at")
             .eq("room_code", room_code)
             .order("created_at", {"ascending": False})
-            .limit(10)
+            .limit(50)
             .execute()
         )
         data = None
@@ -178,20 +182,34 @@ def fetch_latest_user_message(room_code: str) -> str:
             return ""
 
         if not data or not isinstance(data, list):
+            logger.info("No messages found in database for room %s", room_code)
             return ""
 
-        # Find the most recent non-bot message
-        for row in data:
+        logger.info("Query returned %d messages for room %s (checking for latest user message)", len(data), room_code)
+
+        # Find the most recent non-bot message by iterating through results
+        # (ordered newest first, so first non-bot message is the latest)
+        for idx, row in enumerate(data):
             text = (row.get("message") if isinstance(row, dict) else getattr(row, "message", "")) or ""
+            created_at = (row.get("created_at") if isinstance(row, dict) else getattr(row, "created_at", "")) or ""
+            
             if not text:
                 continue
+            
             # Skip bot recommendations
             if _is_worldai_recommendation(text):
+                logger.debug("Skipping bot message at index %d: %s", idx, trunc(text, 50))
                 continue
-            # Found the latest user message
-            return sanitize_text(text)
+            
+            # Found the latest user message - return it immediately
+            sanitized = sanitize_text(text)
+            logger.info("✅ Found latest user message at index %d (created_at: %s, len=%d): %s", 
+                       idx, created_at, len(sanitized), trunc(sanitized, 100))
+            return sanitized
 
-        # No user messages found
+        # No user messages found (only bot messages in recent history)
+        logger.info("No user messages found in recent history for room %s (all %d messages were bot messages)", 
+                   room_code, len(data))
         return ""
     except Exception as e:
         logger.exception("Exception fetching latest message for room %s: %s", room_code, e)
@@ -366,14 +384,16 @@ async def recommend_opportunity(req: RecommendRequest):
             selected_country = None
 
     # Fetch the most recent user message from Supabase (server-side)
+    # This is called fresh each time the endpoint is hit to ensure we get the absolute latest message
+    LATEST_MESSAGE = ""
     try:
         LATEST_MESSAGE = fetch_latest_user_message(req.room_code)
         if LATEST_MESSAGE:
-            logger.info("Fetched latest user message (len=%d): %s", len(LATEST_MESSAGE), trunc(LATEST_MESSAGE, 100))
+            logger.info("✅ Fetched latest user message (len=%d): %s", len(LATEST_MESSAGE), trunc(LATEST_MESSAGE, 100))
         else:
-            logger.info("No recent user messages found")
+            logger.info("ℹ️ No recent user messages found - LATEST_MESSAGE will be empty")
     except Exception as e:
-        logger.exception("Failed to fetch latest user message: %s", e)
+        logger.exception("❌ Failed to fetch latest user message: %s", e)
         LATEST_MESSAGE = ""
 
     # Fetch USER_MESSAGES from Supabase (server-side) - for full conversation context
