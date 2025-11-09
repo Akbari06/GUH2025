@@ -135,6 +135,13 @@
   color: #bbb;
 }
 
+.opportunity-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
 .tile-link,
 .opportunity-link {
   display: inline-block;
@@ -153,6 +160,25 @@
 .tile-link:hover,
 .opportunity-link:hover {
   background: linear-gradient(120deg, #6d28d9, #8b5cf6);
+  transform: translateY(-1px);
+}
+
+.opportunity-select-button {
+  display: inline-block;
+  padding: 6px 14px;
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.opportunity-select-button:hover {
+  background: rgba(34, 197, 94, 0.3);
+  border-color: #22c55e;
   transform: translateY(-1px);
 }
 
