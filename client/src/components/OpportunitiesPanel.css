@@ -37,21 +37,20 @@
 }
 
 .back-button {
-  background: rgba(252, 211, 77, 0.15);
-  color: #fcd34d;
-  border: 1px solid rgba(252, 211, 77, 0.4);
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
+  background: #6366f1;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .back-button:hover {
-  background: rgba(252, 211, 77, 0.25);
-  border-color: #fcd34d;
-  transform: translateX(-2px);
+  background: #4f46e5;
+  transform: translateX(-1px);
 }
 
 .loading-message,
@@ -140,20 +139,21 @@
 .opportunity-link {
   display: inline-block;
   margin-top: 8px;
-  padding: 6px 14px;
-  background: #fcd34d;
-  color: #111;
-  border-radius: 999px;
+  padding: 6px 12px;
+  background: #6366f1;
+  color: white;
+  border-radius: 6px;
   text-decoration: none;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
   align-self: flex-start;
-  transition: background 0.2s;
+  transition: all 0.2s;
 }
 
 .tile-link:hover,
 .opportunity-link:hover {
-  background: #fbbf24;
+  background: #4f46e5;
+  transform: translateY(-1px);
 }
 
 .pagination-controls {
@@ -167,21 +167,20 @@
 }
 
 .pagination-button {
-  background: rgba(252, 211, 77, 0.15);
-  color: #fcd34d;
-  border: 1px solid rgba(252, 211, 77, 0.4);
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
+  background: #6366f1;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
   flex: 0 0 auto;
 }
 
 .pagination-button:hover:not(:disabled) {
-  background: rgba(252, 211, 77, 0.25);
-  border-color: #fcd34d;
+  background: #4f46e5;
   transform: translateY(-1px);
 }
 

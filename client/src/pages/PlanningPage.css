@@ -15,12 +15,14 @@
   z-index: 10;
   position: relative;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .planning-header h1 {
+  position: absolute;
+  left: 32px;
   font-size: 22px;
   font-weight: 700;
   color: #f8fafc;
@@ -29,23 +31,23 @@
 }
 
 .btn-leave-room {
-  padding: 10px 18px;
-  font-size: 14px;
-  background: linear-gradient(120deg, #f43f5e, #f97316);
+  padding: 6px 12px;
+  font-size: 11px;
+  background: #6366f1;
   color: white;
   border: none;
-  border-radius: 10px;
-  font-weight: 700;
+  border-radius: 6px;
+  font-weight: 500;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-  box-shadow: 0 8px 25px rgba(249, 115, 22, 0.35);
+  transition: transform 0.2s, background-color 0.2s;
+  min-width: 0;
+  width: auto;
 }
 
 .btn-leave-room:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 32px rgba(249, 115, 22, 0.45);
+  transform: translateY(-1px);
+  background: #4f46e5;
 }
-
 .planning-content {
   flex: 1;
   position: relative;
