@@ -68,7 +68,13 @@ const LoginPage = () => {
   return (
     <div className="login-page">
       <div className="login-container">
-        <h1 className="login-title">WellWorld</h1>
+        <div className="login-logo">
+          <span className="login-logo-mark">WW</span>
+          <div className="login-logo-text">
+            <h1 className="login-title">WellWorld</h1>
+            <p className="login-tagline">Wellbeing through Social Good</p>
+          </div>
+        </div>
         <p className="login-subtitle">
           {isSignUp ? 'Create an account' : 'Sign in to your account'}
         </p>
@@ -138,4 +144,3 @@ const LoginPage = () => {
 };
 
 export default LoginPage;
-
