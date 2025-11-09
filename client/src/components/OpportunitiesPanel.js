@@ -165,7 +165,8 @@ const OpportunitiesPanel = ({ roomCode, onOpportunitySelect, selectedCountry, on
       console.log('Notifying parent of opportunities change:', opportunities.length);
       onOpportunitiesChange(opportunities);
     }
-  }, [opportunities, onOpportunitiesChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opportunities]); // Only depend on opportunities, not the callback function
 
   // Reset to page 1 when opportunities change
   useEffect(() => {
@@ -220,7 +221,8 @@ const OpportunitiesPanel = ({ roomCode, onOpportunitySelect, selectedCountry, on
       
       onPaginatedOpportunitiesChange(paginatedOpps);
     }
-  }, [currentPage, opportunities, selectedCountry, showAllOpportunities, selectedOpportunityId, onPaginatedOpportunitiesChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, opportunities, selectedCountry, showAllOpportunities, selectedOpportunityId]); // Only depend on data, not the callback function
 
   // Load initial selected opportunity from database
   useEffect(() => {
@@ -320,7 +322,8 @@ const OpportunitiesPanel = ({ roomCode, onOpportunitySelect, selectedCountry, on
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [roomCode, opportunities, onOpportunitySelect]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomCode, opportunities]); // Only depend on roomCode and opportunities, not callback functions
 
   const handleTileClick = (opportunity) => {
     // Debounce rapid clicks

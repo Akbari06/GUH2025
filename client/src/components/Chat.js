@@ -271,7 +271,11 @@ const Chat = ({ roomCode, userId, masterId, opportunities = [] }) => {
       }
 
       const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${apiUrl}/api/gemini/recommend-opportunity`, {
+      const endpoint = `${apiUrl}/api/gemini/recommend-opportunity`;
+      
+      console.log('Calling WorldAI endpoint:', endpoint);
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -282,7 +286,8 @@ const Chat = ({ roomCode, userId, masterId, opportunities = [] }) => {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
 
       const data = await response.json();
@@ -308,7 +313,14 @@ const Chat = ({ roomCode, userId, masterId, opportunities = [] }) => {
       }
     } catch (error) {
       console.error('Error calling WorldAI:', error);
-      alert(`Failed to get recommendation from WorldAI: ${error.message}`);
+      
+      // Provide more helpful error messages
+      let errorMessage = error.message;
+      if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
+        errorMessage = `Failed to connect to backend server at ${process.env.REACT_APP_API_URL || 'http://localhost:8000'}. Please make sure the backend server is running.`;
+      }
+      
+      alert(`Failed to get recommendation from WorldAI: ${errorMessage}`);
     } finally {
       setAskWorldAILoading(false);
     }

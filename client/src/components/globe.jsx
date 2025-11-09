@@ -432,6 +432,123 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
   const [opportunityMarkerState, setOpportunityMarkerState] = useState(null);
   const prevOpportunityMarkerRef = useRef(null);
   const prevSelectedCountryRef = useRef(null);
+  
+  // GPS location and flight route state
+  const [userLocation, setUserLocation] = useState(null); // { lat, lng }
+  const [locationError, setLocationError] = useState(null);
+  const [isRequestingLocation, setIsRequestingLocation] = useState(false);
+  const [flightRoute, setFlightRoute] = useState(null); // Will contain route data from backend
+  const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+
+  // Function to request GPS location
+  const requestUserLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError("Geolocation is not supported by your browser.");
+      return;
+    }
+
+    setIsRequestingLocation(true);
+    setLocationError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const location = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        setUserLocation(location);
+        setIsRequestingLocation(false);
+        console.log("User location obtained:", location);
+        
+        // Automatically calculate flight route if opportunity is selected
+        if (opportunityMarkerState && opportunityMarkerState.lat && opportunityMarkerState.lng) {
+          calculateFlightRoute(location, {
+            lat: opportunityMarkerState.lat,
+            lng: opportunityMarkerState.lng,
+          });
+        }
+      },
+      (error) => {
+        console.error("Error getting location:", error);
+        let errorMessage = "Failed to get your location.";
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = "Location access denied. Please enable location permissions.";
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = "Location information unavailable.";
+            break;
+          case error.TIMEOUT:
+            errorMessage = "Location request timed out.";
+            break;
+        }
+        setLocationError(errorMessage);
+        setIsRequestingLocation(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
+  };
+
+  // Function to calculate flight route from user location to destination
+  const calculateFlightRoute = async (origin, destination) => {
+    if (!origin || !destination) {
+      console.warn("Cannot calculate route: missing origin or destination");
+      return;
+    }
+
+    setIsLoadingRoute(true);
+    setFlightRoute(null);
+
+    try {
+      const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:8000";
+      const response = await fetch(`${apiUrl}/api/gmap/flight-route`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          origin: { lat: origin.lat, lng: origin.lng },
+          destination: { lat: destination.lat, lng: destination.lng },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      const routeData = await response.json();
+      setFlightRoute(routeData);
+      console.log("Flight route calculated:", routeData);
+    } catch (error) {
+      console.error("Error calculating flight route:", error);
+      setLocationError(`Failed to calculate flight route: ${error.message}`);
+    } finally {
+      setIsLoadingRoute(false);
+    }
+  };
+
+  // Automatically calculate route when both user location and opportunity are available
+  useEffect(() => {
+    if (userLocation && opportunityMarkerState && opportunityMarkerState.lat && opportunityMarkerState.lng) {
+      // Use a ref to avoid dependency issues
+      const origin = userLocation;
+      const destination = {
+        lat: opportunityMarkerState.lat,
+        lng: opportunityMarkerState.lng,
+      };
+      
+      calculateFlightRoute(origin, destination);
+    } else {
+      // Clear route if opportunity is deselected
+      setFlightRoute(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLocation, opportunityMarkerState]);
 
   //keep refs in sync with props/state
   useEffect(() => {
@@ -450,6 +567,12 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
   useEffect(() => {
     console.log('GlobeComponent: opportunityMarker prop changed:', opportunityMarker);
     setOpportunityMarkerState(opportunityMarker);
+    // Debug: Check if button should appear
+    if (opportunityMarker && opportunityMarker.lat && opportunityMarker.lng) {
+      console.log('GlobeComponent: Button should appear - opportunityMarker has valid lat/lng');
+    } else {
+      console.log('GlobeComponent: Button will NOT appear - opportunityMarker:', opportunityMarker);
+    }
   }, [opportunityMarker]);
 
   // Load initial selected country from database
@@ -585,6 +708,14 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
       .pointAltitude(0.02) // Slightly elevated above the globe
       .pointLabel(d => d.name) // Show city name on hover
       .labelsData([]) // Initialize with empty labels - using hover labels instead
+      .arcsData([]) // Initialize with empty arcs for flight routes
+      .arcColor(() => "#ff6b6b") // Red color for flight routes
+      .arcStroke(() => 0.4) // Arc line width
+      .arcDashLength(0.4) // Dash pattern for animated arcs
+      .arcDashGap(0.2)
+      .arcDashAnimateTime(() => 2000) // Animation speed (2 seconds)
+      .arcLabel(() => "") // No labels on arcs
+      .arcAltitudeAutoScale(0.02) // Auto-scale arc height based on distance
       .onPolygonClick(d => {
         const currentIsMaster = isMasterRef.current;
         const currentRoomCode = roomCodeRef.current;
@@ -1083,6 +1214,35 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
       .labelsData([]); // Remove always-visible labels to prevent overlap
   }, [selectedCountry, opportunityMarkerState, opportunities]);
 
+  // Update arcs for flight route
+  useEffect(() => {
+    if (!globeInstanceRef.current) return;
+
+    const globe = globeInstanceRef.current;
+
+    if (flightRoute && flightRoute.arc_points && flightRoute.arc_points.length > 0) {
+      // Create arc data from flight route
+      // globe.gl expects arcs in format: { startLat, startLng, endLat, endLng }
+      // But we can also use the arc_points for a more detailed curved path
+      const arcData = [{
+        startLat: flightRoute.origin_airport.lat,
+        startLng: flightRoute.origin_airport.lng,
+        endLat: flightRoute.destination_airport.lat,
+        endLng: flightRoute.destination_airport.lng,
+        // Store additional data for reference
+        originName: flightRoute.origin_airport.name,
+        destinationName: flightRoute.destination_airport.name,
+        distance: flightRoute.distance_km,
+      }];
+
+      globe.arcsData(arcData);
+      console.log("Flight route arc added to globe:", arcData);
+    } else {
+      // Clear arcs if no route
+      globe.arcsData([]);
+    }
+  }, [flightRoute]);
+
   useEffect(() => {
     if (!globeInstanceRef.current) return;
 
@@ -1155,6 +1315,134 @@ const GlobeComponent = ({ roomCode, isMaster, user, opportunityMarker, opportuni
           }}
         >
           {selectedCountry}
+        </div>
+      )}
+
+      {/* GPS Location Button and Status */}
+      {/* Show button when opportunity marker is set OR when opportunityMarker prop is passed */}
+      {(() => {
+        const hasStateMarker = !!(opportunityMarkerState && opportunityMarkerState.lat != null && opportunityMarkerState.lng != null);
+        const hasPropMarker = !!(opportunityMarker && opportunityMarker.lat != null && opportunityMarker.lng != null);
+        const shouldShow = hasStateMarker || hasPropMarker;
+        
+        // Debug logging (only log when state changes to avoid spam)
+        if (shouldShow && (!opportunityMarkerState || !opportunityMarkerState.lat)) {
+          console.log('GlobeComponent: Button should appear. State:', hasStateMarker, 'Prop:', hasPropMarker);
+        }
+        
+        return shouldShow;
+      })() && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 20,
+            right: 20,
+            zIndex: 1000,
+            display: "flex",
+            flexDirection: "column",
+            gap: "10px",
+            alignItems: "flex-end",
+          }}
+        >
+          {!userLocation && (
+            <button
+              onClick={requestUserLocation}
+              disabled={isRequestingLocation}
+              style={{
+                padding: "10px 20px",
+                backgroundColor: isRequestingLocation ? "#666" : "#2563eb",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                cursor: isRequestingLocation ? "not-allowed" : "pointer",
+                fontSize: "14px",
+                fontWeight: "600",
+                boxShadow: "0 4px 6px rgba(0, 0, 0, 0.3)",
+                transition: "background-color 0.2s",
+              }}
+              onMouseEnter={(e) => {
+                if (!isRequestingLocation) {
+                  e.target.style.backgroundColor = "#1d4ed8";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isRequestingLocation) {
+                  e.target.style.backgroundColor = "#2563eb";
+                }
+              }}
+            >
+              {isRequestingLocation ? "📍 Getting Location..." : "📍 Show Flight Route"}
+            </button>
+          )}
+
+          {userLocation && (
+            <div
+              style={{
+                padding: "8px 12px",
+                backgroundColor: "rgba(34, 197, 94, 0.9)",
+                color: "white",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: "500",
+                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
+              }}
+            >
+              ✓ Location: {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
+            </div>
+          )}
+
+          {isLoadingRoute && (
+            <div
+              style={{
+                padding: "8px 12px",
+                backgroundColor: "rgba(59, 130, 246, 0.9)",
+                color: "white",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: "500",
+                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
+              }}
+            >
+              ✈️ Calculating route...
+            </div>
+          )}
+
+          {locationError && (
+            <div
+              style={{
+                padding: "8px 12px",
+                backgroundColor: "rgba(239, 68, 68, 0.9)",
+                color: "white",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: "500",
+                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
+                maxWidth: "250px",
+              }}
+            >
+              ⚠️ {locationError}
+            </div>
+          )}
+
+          {flightRoute && (
+            <div
+              style={{
+                padding: "8px 12px",
+                backgroundColor: "rgba(16, 185, 129, 0.9)",
+                color: "white",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: "500",
+                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
+              }}
+            >
+              ✈️ Route: {flightRoute.distance_km.toFixed(0)} km
+              <br />
+              From: {flightRoute.origin_airport.name}
+              <br />
+              To: {flightRoute.destination_airport.name}
+            </div>
+          )}
         </div>
       )}
     </div>
