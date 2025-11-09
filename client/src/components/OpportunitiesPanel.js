@@ -10,9 +10,54 @@ const OpportunitiesPanel = ({ roomCode, onOpportunitySelect, selectedCountry, on
   const [showAllOpportunities, setShowAllOpportunities] = useState(true);
   const debounceTimerRef = useRef(null);
 
-  // Load opportunities from JSON file
+  // Store the full JSON data
+  const [opportunitiesData, setOpportunitiesData] = useState(null);
+
+  // Helper function to validate and normalize opportunities
+  const validateAndNormalize = (opportunitiesList) => {
+    if (!Array.isArray(opportunitiesList)) {
+      console.warn('validateAndNormalize: opportunitiesList is not an array:', opportunitiesList);
+      return [];
+    }
+    
+    const validated = opportunitiesList
+      .map((opp, index) => {
+        // Handle different field name variations
+        const latlon = opp.latlon || opp.latLon || opp.coordinates || opp.coords;
+        const name = opp.name || opp.Name || opp.title || opp.Title || `Opportunity ${index + 1}`;
+        const link = opp.Link || opp.link || opp.url || opp.URL || '';
+        const country = opp.Country || opp.country || opp.location || 'Unknown';
+
+        // Validate latlon
+        if (!Array.isArray(latlon) || latlon.length !== 2) {
+          console.warn(`Invalid coordinates for opportunity ${index}:`, opp);
+          return null;
+        }
+
+        const [lat, lng] = latlon;
+        if (typeof lat !== 'number' || typeof lng !== 'number') {
+          console.warn(`Invalid lat/lng types for opportunity ${index}:`, opp);
+          return null;
+        }
+
+        return {
+          id: opp.id || `opp-${index}`,
+          lat,
+          lng,
+          name,
+          link,
+          country
+        };
+      })
+      .filter(opp => opp !== null); // Remove invalid entries
+    
+    console.log(`validateAndNormalize: ${opportunitiesList.length} input, ${validated.length} validated`);
+    return validated;
+  };
+
+  // Load opportunities JSON file
   useEffect(() => {
-    const loadOpportunities = async () => {
+    const loadOpportunitiesData = async () => {
       try {
         // Fetch from JSON file in public folder
         const response = await fetch('/opportunities.json');
@@ -20,57 +65,30 @@ const OpportunitiesPanel = ({ roomCode, onOpportunitySelect, selectedCountry, on
         if (response.ok) {
           const data = await response.json();
           
-          // Handle different JSON formats
-          let opportunitiesList = [];
-          if (Array.isArray(data)) {
-            opportunitiesList = data;
-          } else if (data.opportunities && Array.isArray(data.opportunities)) {
-            opportunitiesList = data.opportunities;
-          } else {
-            throw new Error('Invalid JSON format');
-          }
-
-          // Validate and normalize opportunities
-          const validatedOpportunities = opportunitiesList
-            .map((opp, index) => {
-              // Handle different field name variations
-              const latlon = opp.latlon || opp.latLon || opp.coordinates || opp.coords;
-              const name = opp.name || opp.Name || opp.title || opp.Title || `Opportunity ${index + 1}`;
-              const link = opp.Link || opp.link || opp.url || opp.URL || '';
-              const country = opp.Country || opp.country || opp.location || 'Unknown';
-
-              // Validate latlon
-              if (!Array.isArray(latlon) || latlon.length !== 2) {
-                console.warn(`Invalid coordinates for opportunity ${index}:`, opp);
-                return null;
-              }
-
-              const [lat, lng] = latlon;
-              if (typeof lat !== 'number' || typeof lng !== 'number') {
-                console.warn(`Invalid lat/lng types for opportunity ${index}:`, opp);
-                return null;
-              }
-
-              return {
-                id: opp.id || `opp-${index}`,
-                lat,
-                lng,
-                name,
-                link,
-                country
-              };
-            })
-            .filter(opp => opp !== null); // Remove invalid entries
-
-          if (validatedOpportunities.length > 0) {
-            setOpportunities(validatedOpportunities);
-            setError(null);
+          // Store the full JSON object
+          setOpportunitiesData(data);
+          
+          // Load "hardcode" entries on initial boot (only if no country is selected)
+          // The second useEffect will handle country-specific loading
+          if (data.hardcode && Array.isArray(data.hardcode)) {
+            console.log('Initial load: Found hardcode entries:', data.hardcode.length);
+            // Only set hardcode if no country is currently selected
+            // Otherwise, let the second useEffect handle it based on selectedCountry
+            if (!selectedCountry) {
+              const validatedOpportunities = validateAndNormalize(data.hardcode);
+              console.log('Initial load: Setting hardcode opportunities:', validatedOpportunities.length);
+              setOpportunities(validatedOpportunities);
+              setError(null);
+            } else {
+              console.log('Initial load: Country already selected, will load in second useEffect');
+            }
             setLoading(false);
-            return;
+          } else {
+            throw new Error('No "hardcode" entries found in JSON');
           }
+        } else {
+          throw new Error('Failed to load opportunities.json');
         }
-        
-        throw new Error('Failed to load opportunities.json');
       } catch (err) {
         console.error('Error loading opportunities:', err.message);
         setError('Failed to load opportunities. Please check that opportunities.json exists.');
@@ -78,12 +96,62 @@ const OpportunitiesPanel = ({ roomCode, onOpportunitySelect, selectedCountry, on
       }
     };
 
-    loadOpportunities();
+    loadOpportunitiesData();
   }, []);
+
+  // Update opportunities when country selection changes
+  useEffect(() => {
+    if (!opportunitiesData) {
+      console.log('Update opportunities: waiting for opportunitiesData to load');
+      return; // Wait for data to load
+    }
+
+    console.log('Update opportunities: selectedCountry =', selectedCountry, 'opportunitiesData keys:', Object.keys(opportunitiesData));
+
+    if (selectedCountry) {
+      // Find country key (case-insensitive search)
+      const countryKey = Object.keys(opportunitiesData).find(
+        key => key.toLowerCase() === selectedCountry.toLowerCase()
+      );
+
+      console.log('Country selected:', selectedCountry, 'Found key:', countryKey);
+
+      if (countryKey && Array.isArray(opportunitiesData[countryKey])) {
+        const validatedOpportunities = validateAndNormalize(opportunitiesData[countryKey]);
+        console.log(`Setting opportunities for country ${countryKey}:`, validatedOpportunities.length);
+        setOpportunities(validatedOpportunities);
+        setError(null);
+      } else {
+        // Country not found in JSON, fall back to hardcode entries
+        console.log(`No opportunities found for country: ${selectedCountry}, falling back to hardcode`);
+        if (opportunitiesData.hardcode && Array.isArray(opportunitiesData.hardcode)) {
+          const validatedOpportunities = validateAndNormalize(opportunitiesData.hardcode);
+          console.log('Setting hardcode opportunities (country not found):', validatedOpportunities.length);
+          setOpportunities(validatedOpportunities);
+          setError(null);
+        } else {
+          setOpportunities([]);
+          setError(null);
+        }
+      }
+    } else {
+      // No country selected, show "hardcode" entries
+      if (opportunitiesData.hardcode && Array.isArray(opportunitiesData.hardcode)) {
+        console.log('No country selected, loading hardcode entries:', opportunitiesData.hardcode.length);
+        const validatedOpportunities = validateAndNormalize(opportunitiesData.hardcode);
+        console.log('Setting hardcode opportunities:', validatedOpportunities.length, 'entries:', validatedOpportunities.map(o => o.name));
+        setOpportunities(validatedOpportunities);
+        setError(null);
+      } else {
+        console.warn('No hardcode entries found in opportunitiesData');
+      }
+    }
+  }, [selectedCountry, opportunitiesData]);
 
   // Notify parent when opportunities change
   useEffect(() => {
-    if (onOpportunitiesChange && opportunities.length > 0) {
+    if (onOpportunitiesChange) {
+      console.log('Notifying parent of opportunities change:', opportunities.length);
       onOpportunitiesChange(opportunities);
     }
   }, [opportunities, onOpportunitiesChange]);
