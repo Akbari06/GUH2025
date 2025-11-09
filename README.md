@@ -2,6 +2,16 @@
 
 WellWorld is an interactive platform that connects volunteers with global opportunities while providing AI-powered recommendations and real-time collaboration features. The platform features an interactive 3D globe visualization, chat functionality, and smart opportunity matching powered by Google's Gemini AI.
 
+## About the Project
+
+**Inspiration.** I grew up watching neighbors coordinate disaster-response drives with little more than group chats and shared spreadsheets. WellWorld is my attempt to give grassroots organizers a global cockpit where compassion scales as gracefully as code.
+
+**How we built it.** The system stitches together a React + Globe.gl front end, a FastAPI backend, Supabase auth/real-time plumbing, and Gemini-powered recommender flows. The recommendation system uses natural language processing to analyze opportunities based on key factors like time commitment, skill requirements, and potential impact, helping match volunteers with the most suitable opportunities.
+
+**What I learned.** Bridging 3D geospatial rendering with conversational AI taught me a lot about streaming data contracts, optimistic UI patterns, and crafting prompt-safe middle layers so that model outputs stay human-trustworthy.
+
+**Challenges.** Time zones, rate limits, and globe performance kept biting us; the biggest hurdle was smoothing latency so that cross-continent collaborators stayed in sync while Gemini suggestions arrived fast enough to feel like a teammate.
+
 ## Features
 
 - **Interactive 3D Globe:** Visualize volunteering opportunities worldwide
